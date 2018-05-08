@@ -21,7 +21,14 @@ namespace stereo {
 
 	// param for stereo estimation
 	struct StereoParam {
-
+		float minDisparity;
+		float maxDisparity;
+		int numOfK;
+		StereoParam() {
+			minDisparity = 0.0f;
+			maxDisparity = 20.0f;
+			numOfK = 3;
+		}
 	};
 
 	// stereo class
@@ -38,9 +45,16 @@ namespace stereo {
 		std::shared_ptr<SuperPixelGraph> spCreatorPtr;
 		// visualizer
 		std::shared_ptr<Visualizer> visualPtr;
+
+		// variable used in belief propagation
 	public:
 
 	private:
+		/**
+		@brief randomize disparity map
+		@return int
+		*/
+		int randomDisparityMap();
 
 		/**
 		@brief estimate depth image

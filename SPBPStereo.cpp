@@ -13,6 +13,21 @@ stereo::SPBPStereo::~SPBPStereo() {}
 /*                          private functions                         */
 /**********************************************************************/
 /**
+@brief randomize disparity map
+@return int
+*/
+int stereo::SPBPStereo::randomDisparityMap() {
+	// randomize 
+	for (size_t k = 0; k < param.numOfK; k++) {
+		for (size_t i = 0; i < leftSpGraphPtr->num; i++) {
+			float dispar = (static_cast<float>(rand()) / RAND_MAX) * (param.maxDisparity
+				- param.minDisparity) + param.minDisparity;
+		}
+	}
+	return 0;
+}
+
+/**
 @brief estimate depth image
 @return int
 */
