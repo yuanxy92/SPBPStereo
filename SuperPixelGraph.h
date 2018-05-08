@@ -35,8 +35,11 @@ namespace stereo {
 
 	struct SPNode {
 		int index;
+		int repInd; // representative pixel index
+		std::vector<int> pixels; // pixel postions in superpixel
 		std::set<int> adjs;
 		cv::Vec4f range; // 0, 1, 2, 3 => min_x, min_y, min_z, min_w
+		cv::Vec4f rangeExpand; // 0, 1, 2, 3 => min_x, min_y, min_z, min_w
 	};
 
 	struct SPGraph {

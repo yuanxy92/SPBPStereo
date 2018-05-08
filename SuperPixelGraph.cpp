@@ -82,6 +82,7 @@ std::shared_ptr<stereo::SPGraph> stereo::SuperPixelGraph::createSuperPixelGraph(
 		for (size_t col = 0; col < img.cols; col++) {
 			// get label 
 			int label = spGraph->label.at<int>(row, col);
+			spGraph->nodes[label].pixels.push_back(row * img.cols + col);
 			// add adjs
 			if (row < img.rows - 1) {
 				int labelDown = spGraph->label.at<int>(row + 1, col);
@@ -107,6 +108,19 @@ std::shared_ptr<stereo::SPGraph> stereo::SuperPixelGraph::createSuperPixelGraph(
 			if (row > spGraph->nodes[label].range.val[3])
 				spGraph->nodes[label].range.val[3] = row;
 		}
+	}
+	// calculate expanded range
+	int expand = 20;
+	for (size_t i = 0; i < spGraph->nodes.size(); i++) {
+		spGraph->nodes[i].rangeExpand.val[0] = std::max<float>(spGraph->nodes[i].range.val[0] - 20, 0);
+		spGraph->nodes[i].rangeExpand.val[1] = std::max<float>(spGraph->nodes[i].range.val[1] - 20, 0);
+		spGraph->nodes[i].rangeExpand.val[2] = std::min<float>(spGraph->nodes[i].range.val[2] + 20, img.cols);
+		spGraph->nodes[i].rangeExpand.val[3] = std::min<float>(spGraph->nodes[i].range.val[3] + 20, img.rows);
+	}
+	// select representative pixels
+	cv::RNG rng;
+	for (size_t i = 0; i < spGraph->nodes.size(); i++) {
+		spGraph->nodes[i].repInd = spGraph->nodes[i].pixels[rng.next() % spGraph->nodes[i].pixels.size()];
 	}
 	return spGraph;
 }

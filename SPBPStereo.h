@@ -24,10 +24,12 @@ namespace stereo {
 		float minDisparity;
 		float maxDisparity;
 		int numOfK;
+		float alpha;
 		StereoParam() {
 			minDisparity = 0.0f;
 			maxDisparity = 20.0f;
 			numOfK = 3;
+			alpha = 0.9;
 		}
 	};
 
@@ -47,14 +49,40 @@ namespace stereo {
 		std::shared_ptr<Visualizer> visualPtr;
 
 		// variable used in belief propagation
+		int width;
+		int height;
+		cv::Mat leftGradImg;
+		cv::Mat rightGradImg;
+		cv::Mat_<float> dataCost_k;
+		cv::Mat_<float> label_k;
 	public:
 
 	private:
+		/**
+		@brief calculate gradient image
+		@return int
+		*/
+		int calculateGradientImage();
+
+		/**
+		@brief get local data cost per label
+		@param int spInd: index of super pixel
+		@param float dispar: input disparity to calculate disparity
+		@return cv::Mat_<float> localDataCost
+		*/
+		cv::Mat_<float> getLocalDataCostPerLabel(int spInd, float dispar);
+
 		/**
 		@brief randomize disparity map
 		@return int
 		*/
 		int randomDisparityMap();
+
+		/**
+		@brief init belief propagation variables
+		@return int
+		*/
+		int initBeliefPropagation();
 
 		/**
 		@brief estimate depth image
