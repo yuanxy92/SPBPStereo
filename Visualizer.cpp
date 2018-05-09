@@ -128,6 +128,6 @@ void stereo::Visualizer::MotionToColor(const cv::Mat &motion,
 */
 cv::Mat stereo::Visualizer::visualize(cv::Mat disparityMap) {
 	cv::Mat img;
-	this->MotionToColor(disparityToFlow(disparityMap), img, 20);
+	this->MotionToColor(disparityToFlow(disparityMap), img, 50);
 	return img;
 }

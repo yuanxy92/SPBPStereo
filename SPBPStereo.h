@@ -33,12 +33,12 @@ namespace stereo {
 		float tau_s;
 		StereoParam() {
 			minDisparity = 0.0f;
-			maxDisparity = 20.0f;
+			maxDisparity = 50.0f;
 			numOfK = NUM_TOP_K;
 			alpha = 0.9f;
-			iterNum = 8;
-			tau_s = 2.0f;
-			lambda_smooth = 0.2f;
+			iterNum = 5;
+			tau_s = 0.2f;
+			lambda_smooth = 1.0f;
 		}
 	};
 
@@ -64,12 +64,19 @@ namespace stereo {
 		cv::Mat rightGradImg;
 		cv::Mat leftSmoothImg;
 		cv::Mat rightSmoothImg;
+		cv::Mat leftLBPImg;
+		cv::Mat rightLBPImg;
 		// data cost and correspondence label
 		cv::Mat_<float> dataCost_k; // data cost
 		cv::Mat_<float> label_k; // label, disparity
 		// message used in belief propagation
-		cv::Mat_<cv::Vec<float, NUM_TOP_K>> message;
+		cv::Mat_<cv::Vec3f> message;
+		//cv::Mat_<cv::Vec<float, NUM_TOP_K>> message;
 		cv::Mat_<cv::Vec4f> smoothWeight;
+
+		//cv::Mat dataCost_k_view;
+		//cv::Mat label_k_view;
+		//cv::Mat message_view;
 	public:
 
 	private:
@@ -79,6 +86,14 @@ namespace stereo {
 		@return cv::Vec3f: return vec3f value
 		*/
 		cv::Vec3f vec3bToVec3f(cv::Vec3b input);
+
+		/**
+		@brief feature calculation
+		@param cv::Mat src: input image matrix
+		@param cv::Mat dst: output lbp feature image
+		@return int
+		*/
+		int calcLBPFeature(cv::Mat& src, cv::Mat& dst);
 
 		/**
 		@brief estimate disparity map from data cost 

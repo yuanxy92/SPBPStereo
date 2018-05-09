@@ -27,6 +27,36 @@ cv::Vec3f stereo::SPBPStereo::vec3bToVec3f(cv::Vec3b input) {
 }
 
 /**
+@brief feature calculation
+@param cv::Mat input: input image matrix
+@param cv::Mat output: output lbp feature image
+@return int
+*/
+int stereo::SPBPStereo::calcLBPFeature(cv::Mat& src, cv::Mat& dst) {
+	cv::Mat input;
+	if (src.channels() > 1) 
+		cv::cvtColor(src, input, cv::COLOR_BGR2GRAY);
+	else input = src;
+	dst = cv::Mat::zeros(input.rows, input.cols, CV_8UC1);
+	for (int i = 1; i< input.rows - 1; i++) {
+		for (int j = 1; j< input.cols - 1; j++) {
+			uchar center = input.at<uchar>(i, j);
+			unsigned char code = 0;
+			code |= (input.at<uchar>(i - 1, j - 1) > center) << 7;
+			code |= (input.at<uchar>(i - 1, j) > center) << 6;
+			code |= (input.at<uchar>(i - 1, j + 1) > center) << 5;
+			code |= (input.at<uchar>(i, j + 1) > center) << 4;
+			code |= (input.at<uchar>(i + 1, j + 1) > center) << 3;
+			code |= (input.at<uchar>(i + 1, j) > center) << 2;
+			code |= (input.at<uchar>(i + 1, j - 1) > center) << 1;
+			code |= (input.at<uchar>(i, j - 1) > center) << 0;
+			dst.at<unsigned char>(i, j) = code;
+		}
+	}
+	return 0;
+}
+
+/**
 @brief estimate disparity map from data cost
 @return int
 */
@@ -73,6 +103,40 @@ int stereo::SPBPStereo::calculateGradientImage() {
 	return 0;
 }
 
+//! popcount LUT for 8-bit vectors
+static const uchar popcount_LUT8[256] = {
+	0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
+	1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
+	1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
+	2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+	1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
+	2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+	2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+	3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+	1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
+	2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+	2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+	3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+	2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+	3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+	3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+	4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
+};
+
+//! computes the population count of an N-byte vector using an 8-bit popcount LUT
+template<typename T> static inline size_t popcount(T x) {
+	size_t nBytes = sizeof(T);
+	size_t nResult = 0;
+	for (size_t l = 0; l<nBytes; ++l)
+		nResult += popcount_LUT8[(uchar)(x >> l * 8)];
+	return nResult;
+}
+
+//! computes the hamming distance between two N-byte vectors using an 8-bit popcount LUT
+template<typename T> static inline size_t hdist(T a, T b) {
+	return popcount(a^b);
+}
+
 /**
 @brief get local data cost per label
 @param int spInd: index of super pixel
@@ -95,27 +159,30 @@ cv::Mat_<float> stereo::SPBPStereo::getLocalDataCostPerLabel(int spInd, float di
 	for (size_t row = 0; row < rect.height; row++) {
 		for (size_t col = 0; col < rect.width; col++) {
 			if (col + rect.x - dispar < rightImg.cols && col + rect.x - dispar >= 0) {
-				cv::Vec3b leftColorVal = leftImg.at<cv::Vec3b>(row + rect.y, col + rect.x);
-				cv::Vec3b rightColorVal = rightImg.at<cv::Vec3b>(row + rect.y, col + rect.x - dispar);
-				cv::Vec2b leftGradVal = leftGradImg.at<cv::Vec2b>(row + rect.y, col + rect.x);
-				cv::Vec2b rightGradVal = rightGradImg.at<cv::Vec2b>(row + rect.y, col + rect.x - dispar);
-				float colorCost = (abs(static_cast<float>(leftColorVal.val[0]) - static_cast<float>(rightColorVal.val[0]))
-					+ abs(static_cast<float>(leftColorVal.val[1]) - static_cast<float>(rightColorVal.val[1]))
-					+ abs(static_cast<float>(leftColorVal.val[2]) - static_cast<float>(rightColorVal.val[2]))) / 3;
-				float gradCost = (abs(static_cast<float>(leftGradVal.val[0]) - static_cast<float>(rightGradVal.val[0]))
-					+ abs(static_cast<float>(leftGradVal.val[1]) - static_cast<float>(rightGradVal.val[1]))) / 2;
-				localDataCost.at<float>(row, col) = (1 - param.alpha) * std::min<float>(colorCost, 10)
-				 	+ param.alpha * std::min<float>(gradCost, 2);
+				//cv::Vec3b leftColorVal = leftImg.at<cv::Vec3b>(row + rect.y, col + rect.x);
+				//cv::Vec3b rightColorVal = rightImg.at<cv::Vec3b>(row + rect.y, col + rect.x - dispar);
+				//cv::Vec2b leftGradVal = leftGradImg.at<cv::Vec2b>(row + rect.y, col + rect.x);
+				//cv::Vec2b rightGradVal = rightGradImg.at<cv::Vec2b>(row + rect.y, col + rect.x - dispar);
+				//float colorCost = (abs(static_cast<float>(leftColorVal.val[0]) - static_cast<float>(rightColorVal.val[0]))
+				//	+ abs(static_cast<float>(leftColorVal.val[1]) - static_cast<float>(rightColorVal.val[1]))
+				//	+ abs(static_cast<float>(leftColorVal.val[2]) - static_cast<float>(rightColorVal.val[2]))) / 3;
+				//float gradCost = (abs(static_cast<float>(leftGradVal.val[0]) - static_cast<float>(rightGradVal.val[0]))
+				//	+ abs(static_cast<float>(leftGradVal.val[1]) - static_cast<float>(rightGradVal.val[1]))) / 2;
+				//localDataCost.at<float>(row, col) = (1 - param.alpha) * std::min<float>(colorCost, 10)
+				// 	+ param.alpha * std::min<float>(gradCost, 2);
+				uchar leftLBP = leftLBPImg.at<uchar>(row + rect.y, col + rect.x);
+				uchar rightLBP = rightLBPImg.at<uchar>(row + rect.y, col + rect.x - dispar);
+				localDataCost.at<float>(row, col) = hdist<uchar>(leftLBP, rightLBP);
 			}
 			else {
-				localDataCost.at<float>(row, col) = 255;
+				localDataCost.at<float>(row, col) = 10;
 			}
 		}
 	}
 	// aggregate cost using using guide filter
 	leftSmoothImg(rect).copyTo(colorPatch);
-	cv::ximgproc::guidedFilter(colorPatch, localDataCost, localDataCost, 20, 8);
-	//cv::GaussianBlur(localDataCost, localDataCost, cv::Size(21, 21), 12, 12, cv::BORDER_REPLICATE);
+	cv::ximgproc::guidedFilter(colorPatch, localDataCost, localDataCost, 9, 4);
+	//cv::GaussianBlur(localDataCost, localDataCost, cv::Size(12, 12), 5, 5, cv::BORDER_REPLICATE);
 	return localDataCost;
 }
 
@@ -172,23 +239,35 @@ int stereo::SPBPStereo::randomDisparityMap() {
 	}
 	// init message for belief propagation
 	message.create(width * height, 4);
-	message.setTo(0);
+	message.setTo(cv::Scalar(0, 0, 0));
 	smoothWeight.create(height, width);
-	smoothWeight.setTo(cv::Scalar(10, 10, 10, 10));
-	for (int i = 1; i < height - 1; ++i) {
-        for (int j = 1; j < width - 1; ++j) {
+	smoothWeight.setTo(cv::Scalar(0, 0, 0, 0));
+	for (int i = 0; i < height; ++i) {
+        for (int j = 0; j < width; ++j) {
             cv::Vec3f centerVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j));
-            cv::Vec3f upVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i - 1, j));
-            cv::Vec3f downVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i + 1, j));
-            cv::Vec3f leftVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j - 1));
-            cv::Vec3f rightVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j + 1));
-            smoothWeight[i][j][0] = param.lambda_smooth * std::exp(-cv::norm(centerVal - leftVal) / 20.0f);
-            smoothWeight[i][j][1] = param.lambda_smooth * std::exp(-cv::norm(centerVal - rightVal) / 20.0f);
-            smoothWeight[i][j][2] = param.lambda_smooth * std::exp(-cv::norm(centerVal - upVal) / 20.0f);
-            smoothWeight[i][j][3] = param.lambda_smooth * std::exp(-cv::norm(centerVal - downVal) / 20.0f);
+			if (i > 0) {
+				cv::Vec3f upVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i - 1, j));
+				smoothWeight[i][j][2] = param.lambda_smooth * std::exp(-cv::norm(centerVal - upVal) / 20.0f);
+			}
+			if (i < height - 1) {
+				cv::Vec3f downVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i + 1, j));
+				smoothWeight[i][j][3] = param.lambda_smooth * std::exp(-cv::norm(centerVal - downVal) / 20.0f);
+			}
+			if (j > 0) {
+				cv::Vec3f leftVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j - 1));
+				smoothWeight[i][j][0] = param.lambda_smooth * std::exp(-cv::norm(centerVal - leftVal) / 20.0f);
+			}
+			if (j < width - 1) {
+				cv::Vec3f rightVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j + 1));
+				smoothWeight[i][j][1] = param.lambda_smooth * std::exp(-cv::norm(centerVal - rightVal) / 20.0f);
+			}
         }
     }
 	disparityMap.create(height, width);
+
+	//message_view = cv::Mat(message.size(), CV_32FC4, message.data);
+	//dataCost_k_view = cv::Mat(dataCost_k.size(), CV_32FC1, dataCost_k.data);
+	//label_k_view = cv::Mat(label_k.size(), CV_32FC1, label_k.data);
 	return 0;
 }
 
@@ -201,10 +280,8 @@ float stereo::SPBPStereo::computeBPPerLabel(const float* dis_belief,
 	int p, const float& disp_ref, float wt, float tau_s) {
 	float min_cost = 1e5;
 	for (int k = 0; k < NUM_TOP_K; ++k) {
-		float cost_tp = dis_belief[k] + wt * std::min<float>(abs(disp_ref - label_k[p][k]), tau_s);
-#if 0
-		float cost_tp = dis_belief[k] + wt * std::min<float>((pow(disp_ref[0] - label_k[p][k], 2), tau_s);
-#endif
+		float label_val = label_k[p][k];
+		float cost_tp = dis_belief[k] + wt * std::min<float>(abs(disp_ref - label_val), tau_s);
 		if (cost_tp < min_cost)
 			min_cost = cost_tp;
 	}
@@ -488,7 +565,9 @@ int stereo::SPBPStereo::beliefPropagation() {
 	// diplay disparity map
 	std::cout << cv::format("SPBP finished ...") << std::endl;
 	this->estimateDisparity();
+	cv::imwrite("visual0.png", disparityMap * 5);
 	display = this->visualPtr->visualize(disparityMap);
+	cv::imwrite("visual.png", display);
 	cv::imshow("display", display);
 	cv::waitKey(0);
 	return 0;
@@ -502,8 +581,13 @@ int stereo::SPBPStereo::estimate() {
 	// calculate gradient image
 	width = leftImg.cols;
 	height = leftImg.rows;
-	cv::ximgproc::l0Smooth(leftImg, leftSmoothImg, 0.02, 2.0);
-	cv::ximgproc::l0Smooth(rightImg, rightSmoothImg, 0.02, 2.0);
+	//cv::ximgproc::l0Smooth(leftImg, leftSmoothImg, 0.02, 2.0);
+	//cv::ximgproc::l0Smooth(rightImg, rightSmoothImg, 0.02, 2.0);
+	leftSmoothImg = leftImg;
+	rightSmoothImg = rightImg;
+	calcLBPFeature(leftImg, leftLBPImg);
+	calcLBPFeature(rightImg, rightLBPImg);
+
 	this->calculateGradientImage();
 	// create super pixels
 	leftSpGraphPtr = spCreatorPtr->createSuperPixelGraph(leftImg);

@@ -1,8 +1,10 @@
 #include "SPBPStereo.h"
 
 int main(int argc, char* argv[]) {
-	cv::Mat img1 = cv::imread("E:\\data\\giga_stereo\\1\\data\\0\\0000.jpg");
-	cv::Mat img2 = cv::imread("E:\\data\\giga_stereo\\1\\data\\1\\0000.jpg");
+	cv::Mat img1 = cv::imread("im2.png");
+	//cv::Mat img1 = cv::imread("E:\\data\\giga_stereo\\1\\data\\0\\0000.jpg");
+	cv::Mat img2 = cv::imread("im6.png");
+	//cv::Mat img2 = cv::imread("E:\\data\\giga_stereo\\1\\data\\1\\0000.jpg");
 	stereo::SPBPStereo stereo;
 	cv::Rect rect(400, 200, 400, 400);
 	stereo.init(stereo::StereoParam());
