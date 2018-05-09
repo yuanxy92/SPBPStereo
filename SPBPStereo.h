@@ -35,10 +35,10 @@ namespace stereo {
 			minDisparity = 0.0f;
 			maxDisparity = 20.0f;
 			numOfK = NUM_TOP_K;
-			alpha = 0.8f;
+			alpha = 0.9f;
 			iterNum = 8;
 			tau_s = 2.0f;
-			lambda_smooth = 0.0f;
+			lambda_smooth = 0.2f;
 		}
 	};
 
@@ -62,6 +62,8 @@ namespace stereo {
 		int height;
 		cv::Mat leftGradImg;
 		cv::Mat rightGradImg;
+		cv::Mat leftSmoothImg;
+		cv::Mat rightSmoothImg;
 		// data cost and correspondence label
 		cv::Mat_<float> dataCost_k; // data cost
 		cv::Mat_<float> label_k; // label, disparity

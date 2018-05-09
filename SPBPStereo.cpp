@@ -113,10 +113,9 @@ cv::Mat_<float> stereo::SPBPStereo::getLocalDataCostPerLabel(int spInd, float di
 		}
 	}
 	// aggregate cost using using guide filter
-	leftImg(rect).copyTo(colorPatch);
-	leftGradImg(rect).copyTo(gradPatch);
-	//cv::ximgproc::guidedFilter(colorPatch, localDataCost, localDataCost, 20, 8);
-	cv::GaussianBlur(localDataCost, localDataCost, cv::Size(21, 21), 12, 12, cv::BORDER_REPLICATE);
+	leftSmoothImg(rect).copyTo(colorPatch);
+	cv::ximgproc::guidedFilter(colorPatch, localDataCost, localDataCost, 20, 8);
+	//cv::GaussianBlur(localDataCost, localDataCost, cv::Size(21, 21), 12, 12, cv::BORDER_REPLICATE);
 	return localDataCost;
 }
 
@@ -135,8 +134,8 @@ int stereo::SPBPStereo::randomDisparityMap() {
 		std::vector<float> labelVecs;
 		// random top K depth
 		while (k < param.numOfK) {
-			float dispar = (static_cast<float>(rand()) / RAND_MAX) * (param.maxDisparity
-				- param.minDisparity) + param.minDisparity;
+			float dispar = floor((static_cast<float>(rand()) / RAND_MAX) * (param.maxDisparity
+				- param.minDisparity) + param.minDisparity);
 			if (dispar >= param.minDisparity && dispar <= param.maxDisparity) {
 				bool needReRand = false;
 				for (int kinside = 0; kinside < k; kinside ++) {
@@ -175,6 +174,7 @@ int stereo::SPBPStereo::randomDisparityMap() {
 	message.create(width * height, 4);
 	message.setTo(0);
 	smoothWeight.create(height, width);
+	smoothWeight.setTo(cv::Scalar(10, 10, 10, 10));
 	for (int i = 1; i < height - 1; ++i) {
         for (int j = 1; j < width - 1; ++j) {
             cv::Vec3f centerVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j));
@@ -182,10 +182,10 @@ int stereo::SPBPStereo::randomDisparityMap() {
             cv::Vec3f downVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i + 1, j));
             cv::Vec3f leftVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j - 1));
             cv::Vec3f rightVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j + 1));
-            smoothWeight[i][j][0] = param.lambda_smooth * std::exp(-cv::norm(centerVal - upVal) / 20.0f);
-            smoothWeight[i][j][1] = param.lambda_smooth * std::exp(-cv::norm(centerVal - downVal) / 20.0f);
-            smoothWeight[i][j][2] = param.lambda_smooth * std::exp(-cv::norm(centerVal - leftVal) / 20.0f);
-            smoothWeight[i][j][3] = param.lambda_smooth * std::exp(-cv::norm(centerVal - rightVal) / 20.0f);
+            smoothWeight[i][j][0] = param.lambda_smooth * std::exp(-cv::norm(centerVal - leftVal) / 20.0f);
+            smoothWeight[i][j][1] = param.lambda_smooth * std::exp(-cv::norm(centerVal - rightVal) / 20.0f);
+            smoothWeight[i][j][2] = param.lambda_smooth * std::exp(-cv::norm(centerVal - upVal) / 20.0f);
+            smoothWeight[i][j][3] = param.lambda_smooth * std::exp(-cv::norm(centerVal - downVal) / 20.0f);
         }
     }
 	disparityMap.create(height, width);
@@ -502,6 +502,8 @@ int stereo::SPBPStereo::estimate() {
 	// calculate gradient image
 	width = leftImg.cols;
 	height = leftImg.rows;
+	cv::ximgproc::l0Smooth(leftImg, leftSmoothImg, 0.02, 2.0);
+	cv::ximgproc::l0Smooth(rightImg, rightSmoothImg, 0.02, 2.0);
 	this->calculateGradientImage();
 	// create super pixels
 	leftSpGraphPtr = spCreatorPtr->createSuperPixelGraph(leftImg);
