@@ -24,7 +24,7 @@ namespace stereo {
 		SuperPixelParam() {
 			regionSize = sqrt(1200.0f * 1000.0f / 1000.0f);
 			algorithm = cv::ximgproc::SLIC;
-			ruler = 30.0f;
+			ruler = 50.0f;
 		}
 		SuperPixelParam(int regionSize, int algorithm, float ruler) {
 			this->regionSize = regionSize;
@@ -38,8 +38,8 @@ namespace stereo {
 		int repInd; // representative pixel index
 		std::vector<int> pixels; // pixel postions in superpixel
 		std::set<int> adjs;
-		cv::Vec4f range; // 0, 1, 2, 3 => min_x, min_y, min_z, min_w
-		cv::Vec4f rangeExpand; // 0, 1, 2, 3 => min_x, min_y, min_z, min_w
+		cv::Vec4f range; // 0, 1, 2, 3 => min_x, min_y, max_x, max_y
+		cv::Vec4f rangeExpand; // 0, 1, 2, 3 => min_x, min_y, max_x, max_y
 	};
 
 	struct SPGraph {

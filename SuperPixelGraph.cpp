@@ -37,13 +37,20 @@ int stereo::SuperPixelGraph::init(SuperPixelParam param) {
 std::shared_ptr<stereo::SPGraph> stereo::SuperPixelGraph::createSuperPixelGraph(cv::Mat img) {
 	std::shared_ptr<stereo::SPGraph> spGraph = std::make_shared<stereo::SPGraph>();
 	// create superpixel
-	param.regionSize = sqrt(img.rows * img.cols / 500.0f);
+	param.regionSize = sqrt(img.rows * img.cols / 1000.0f);
 	cv::Ptr<cv::ximgproc::SuperpixelSLIC> slic =
 		cv::ximgproc::createSuperpixelSLIC(img, param.algorithm,
 			param.regionSize, param.ruler);
 	slic->iterate();
-	slic->enforceLabelConnectivity(25);
+	slic->enforceLabelConnectivity(40);
 	slic->getLabels(spGraph->label);
+
+	cv::Mat mask;
+	slic->getLabelContourMask(mask);
+	cv::Mat frame = img.clone();
+	frame.setTo(cv::Scalar(0, 0, 255), mask);
+	cv::imwrite("superpixel.png", frame);
+
 	// make superpixel label continous
 	std::set<int> labels;
 	std::map<int, int> labelmaps;
@@ -115,8 +122,8 @@ std::shared_ptr<stereo::SPGraph> stereo::SuperPixelGraph::createSuperPixelGraph(
 	for (size_t i = 0; i < spGraph->nodes.size(); i++) {
 		spGraph->nodes[i].rangeExpand.val[0] = std::max<float>(spGraph->nodes[i].range.val[0] - 20, 0);
 		spGraph->nodes[i].rangeExpand.val[1] = std::max<float>(spGraph->nodes[i].range.val[1] - 20, 0);
-		spGraph->nodes[i].rangeExpand.val[2] = std::min<float>(spGraph->nodes[i].range.val[2] + 20, img.cols);
-		spGraph->nodes[i].rangeExpand.val[3] = std::min<float>(spGraph->nodes[i].range.val[3] + 20, img.rows);
+		spGraph->nodes[i].rangeExpand.val[2] = std::min<float>(spGraph->nodes[i].range.val[2] + 20, img.cols - 1);
+		spGraph->nodes[i].rangeExpand.val[3] = std::min<float>(spGraph->nodes[i].range.val[3] + 20, img.rows - 1);
 	}
 	// select representative pixels
 	cv::RNG rng;

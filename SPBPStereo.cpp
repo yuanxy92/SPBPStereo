@@ -144,18 +144,18 @@ template<typename T> static inline size_t hdist(T a, T b) {
 @return cv::Mat_<float> dataCost
 */
 cv::Mat_<float> stereo::SPBPStereo::getLocalDataCostPerLabel(int spInd, float dispar) {
-	cv::Mat localDataCost;
+	cv::Mat_<float> localDataCost;
 	// get rectangle
 	cv::Rect rect;
 	rect.x = leftSpGraphPtr->nodes[spInd].rangeExpand.val[0];
 	rect.y = leftSpGraphPtr->nodes[spInd].rangeExpand.val[1];
 	rect.width = leftSpGraphPtr->nodes[spInd].rangeExpand.val[2] -
-		leftSpGraphPtr->nodes[spInd].rangeExpand.val[0];
+		leftSpGraphPtr->nodes[spInd].rangeExpand.val[0] + 1;
 	rect.height = leftSpGraphPtr->nodes[spInd].rangeExpand.val[3] -
-		leftSpGraphPtr->nodes[spInd].rangeExpand.val[1];
+		leftSpGraphPtr->nodes[spInd].rangeExpand.val[1] + 1;
 	// rgb color patch and gradient patch
 	cv::Mat colorPatch, gradPatch;
-	localDataCost.create(rect.size(), CV_32F);
+	localDataCost.create(rect.size());
 	for (size_t row = 0; row < rect.height; row++) {
 		for (size_t col = 0; col < rect.width; col++) {
 			if (col + rect.x - dispar < rightImg.cols && col + rect.x - dispar >= 0) {
@@ -172,20 +172,71 @@ cv::Mat_<float> stereo::SPBPStereo::getLocalDataCostPerLabel(int spInd, float di
 				// 	+ param.alpha * std::min<float>(gradCost, 2);
 				uchar leftLBP = leftLBPImg.at<uchar>(row + rect.y, col + rect.x);
 				uchar rightLBP = rightLBPImg.at<uchar>(row + rect.y, col + rect.x - dispar);
-				localDataCost.at<float>(row, col) = hdist<uchar>(leftLBP, rightLBP);
+				localDataCost(row, col) = hdist<uchar>(leftLBP, rightLBP);
 			}
 			else {
-				localDataCost.at<float>(row, col) = 10;
+				localDataCost(row, col) = 8.0f;
 			}
 		}
 	}
+	//std::cout << cv::format("Calculate data cost sp %d ...", spInd) << std::endl;
 	// aggregate cost using using guide filter
 	leftSmoothImg(rect).copyTo(colorPatch);
-	cv::ximgproc::guidedFilter(colorPatch, localDataCost, localDataCost, 9, 4);
+	//cv::ximgproc::guidedFilter(colorPatch, localDataCost, localDataCost, 9, 4);
 	//cv::GaussianBlur(localDataCost, localDataCost, cv::Size(12, 12), 5, 5, cv::BORDER_REPLICATE);
+	cfPtr->FastCLMF0FloatFilterPointer(guideMaps[spInd], localDataCost, localDataCost);
 	return localDataCost;
 }
 
+/**
+@brief function to modify arm length to fit sub image
+@return int
+*/
+int stereo::SPBPStereo::modifyCrossMapArmlengthToFitSubImage(const cv::Mat_<cv::Vec4b>& crMapIn,
+	int maxArmLength, cv::Mat_<cv::Vec4b>& crMapOut) {
+	int iy, ix, height, width;
+	height = crMapIn.rows;
+	width = crMapIn.cols;
+	crMapOut = crMapIn.clone();
+	// up
+	for (iy = 0; iy < std::min<int>(maxArmLength, height); ++iy) {
+		for (ix = 0; ix < width; ++ix) {
+			crMapOut[iy][ix][1] = std::min<int>(iy, crMapOut[iy][ix][1]);
+		}
+	}
+	// down
+	int ky = maxArmLength - 1;
+	for (iy = height - maxArmLength; iy < height; ++iy) {
+		if (iy < 0) {
+			--ky;
+			continue;
+		}
+		for (ix = 0; ix < width; ++ix) {
+			crMapOut[iy][ix][3] = std::min<int>(ky, crMapOut[iy][ix][3]);
+		}
+		--ky;
+	}
+	// left
+	for (iy = 0; iy < height; ++iy) {
+		for (ix = 0; ix < std::min<int>(width, maxArmLength); ++ix) {
+			crMapOut[iy][ix][0] = std::min<int>(ix, crMapOut[iy][ix][0]);
+		}
+	}
+	// right
+	int kx;
+	for (iy = 0; iy < height; ++iy) {
+		kx = maxArmLength - 1;
+		for (ix = width - maxArmLength; ix < width; ++ix) {
+			if (ix < 0) {
+				--kx;
+				continue;
+			}
+			crMapOut[iy][ix][2] = std::min<int>(kx, crMapOut[iy][ix][2]);
+			--kx;
+		}
+	}
+	return 0;
+}
 
 /**
 @brief randomize disparity map
@@ -199,6 +250,34 @@ int stereo::SPBPStereo::randomDisparityMap() {
 		int k = 0;
 		int repInd = leftSpGraphPtr->nodes[i].repInd;
 		std::vector<float> labelVecs;
+
+		// init guide filter
+		int crossColorTau = 25;
+		int crossArmLength = 9;
+		// calculate sub-image and sub-crossmap
+		cv::Mat leftBlurImg;
+		cv::Mat leftImgf;
+		cv::Mat_<cv::Vec4b> crossMap;
+		leftImg.convertTo(leftImgf, CV_32FC3);
+		cv::medianBlur(leftImgf, leftBlurImg, 3);
+		cfPtr = std::make_shared<CFFilter>();
+		cfPtr->GetCrossUsingSlidingWindow(leftBlurImg, crossMap, crossArmLength, crossColorTau);
+		guideMaps.resize(leftSpGraphPtr->num);
+		for (size_t spInd = 0; spInd < leftSpGraphPtr->num; spInd++) {
+			int pxInd = leftSpGraphPtr->nodes[spInd].repInd;
+			// extract sub-image from subrange
+			int w = leftSpGraphPtr->nodes[spInd].rangeExpand.val[2] -
+				leftSpGraphPtr->nodes[spInd].rangeExpand.val[0] + 1;
+			int h = leftSpGraphPtr->nodes[spInd].rangeExpand.val[3] -
+				leftSpGraphPtr->nodes[spInd].rangeExpand.val[1] + 1;
+			int x = leftSpGraphPtr->nodes[spInd].rangeExpand.val[0];
+			int y = leftSpGraphPtr->nodes[spInd].rangeExpand.val[1];
+
+			cv::Mat_<cv::Vec4b> tmpCr;
+			modifyCrossMapArmlengthToFitSubImage(crossMap(cv::Rect(x, y, w, h)), crossArmLength, tmpCr);
+			guideMaps[spInd] = tmpCr.clone();
+		}
+
 		// random top K depth
 		while (k < param.numOfK) {
 			float dispar = floor((static_cast<float>(rand()) / RAND_MAX) * (param.maxDisparity
@@ -237,6 +316,7 @@ int stereo::SPBPStereo::randomDisparityMap() {
             }
         }	
 	}
+
 	// init message for belief propagation
 	message.create(width * height, 4);
 	message.setTo(cv::Scalar(0, 0, 0));
@@ -264,10 +344,6 @@ int stereo::SPBPStereo::randomDisparityMap() {
         }
     }
 	disparityMap.create(height, width);
-
-	//message_view = cv::Mat(message.size(), CV_32FC4, message.data);
-	//dataCost_k_view = cv::Mat(dataCost_k.size(), CV_32FC1, dataCost_k.data);
-	//label_k_view = cv::Mat(label_k.size(), CV_32FC1, label_k.data);
 	return 0;
 }
 
@@ -312,11 +388,13 @@ int stereo::SPBPStereo::beliefPropagation() {
 	this->estimateDisparity();
 	cv::Mat display = this->visualPtr->visualize(disparityMap);
 	cv::imshow("display", display);
-	cv::waitKey(5);
+	cv::imwrite("visual_init.png", display);
+	cv::waitKey(20);
 
 	// start belief propagation
 	int spBegin, spEnd, spStep;
 	for (size_t iter = 0; iter < param.iterNum; iter++) {
+		param.tau_s *= 2;
 		// clear neighbor lable vector
 		if (iter % 2) {
 			spBegin = leftSpGraphPtr->num - 1, spEnd = -1, spStep = -1;
@@ -478,8 +556,8 @@ int stereo::SPBPStereo::beliefPropagation() {
 						vec_belief.push_back(_mes_l + _mes_r + _mes_u + _mes_d + dcost);
 					}
 					// update messages with propagation and random search labels
-					float lux = leftSpGraphPtr->nodes[spInd].range.val[0];
-					float luy = leftSpGraphPtr->nodes[spInd].range.val[1];
+					float lux = leftSpGraphPtr->nodes[spInd].rangeExpand.val[0];
+					float luy = leftSpGraphPtr->nodes[spInd].rangeExpand.val[1];
 					for (int test_id = 0; test_id < vec_label_nei.size(); ++test_id) {
 						float test_label = vec_label_nei[test_id];
 						vec_label.push_back(test_label);
@@ -560,7 +638,7 @@ int stereo::SPBPStereo::beliefPropagation() {
 		this->estimateDisparity();
 		cv::Mat display = this->visualPtr->visualize(disparityMap);
 		cv::imshow("display", display);
-		cv::waitKey(5);
+		cv::waitKey(20);
 	}
 	// diplay disparity map
 	std::cout << cv::format("SPBP finished ...") << std::endl;

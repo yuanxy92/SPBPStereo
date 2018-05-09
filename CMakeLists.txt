@@ -95,6 +95,8 @@ set(CUDA_NVCC_FLAGS
 include_directories(${PROJECT_SOURCE_DIR})
 set(COMMON_DIR ${PROJECT_SOURCE_DIR}/Common)
 include_directories(${COMMON_DIR})
+set(CLMF_DIR ${PROJECT_SOURCE_DIR}/CLMF)
+include_directories(${CLMF_DIR})
 
 # add exe name
 set(exename "SPBPStereo")
@@ -104,6 +106,7 @@ set(HEADER_FILES
 	Visualizer.h
 	SPBPStereo.h
 	SuperPixelGraph.h
+	CLMF/CLMF.h
 )
 
 set(SOURCE_FILES
@@ -111,6 +114,7 @@ set(SOURCE_FILES
 	SPBPStereo.cpp
 	SuperPixelGraph.cpp
 	main.cpp
+	CLMF/CLMF.cpp
 )
 
 add_executable(${exename}

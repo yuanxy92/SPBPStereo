@@ -16,6 +16,7 @@
 
 #include "SuperPixelGraph.h"
 #include "Visualizer.h"
+#include "CLMF/CLMF.h"
 
 namespace stereo {
 
@@ -70,13 +71,12 @@ namespace stereo {
 		cv::Mat_<float> dataCost_k; // data cost
 		cv::Mat_<float> label_k; // label, disparity
 		// message used in belief propagation
-		cv::Mat_<cv::Vec3f> message;
-		//cv::Mat_<cv::Vec<float, NUM_TOP_K>> message;
+		cv::Mat_<cv::Vec<float, NUM_TOP_K>> message;
 		cv::Mat_<cv::Vec4f> smoothWeight;
+		// guide map used for aggregate cost
+		std::shared_ptr<CFFilter> cfPtr;
+		std::vector<cv::Mat_<cv::Vec4b>> guideMaps;
 
-		//cv::Mat dataCost_k_view;
-		//cv::Mat label_k_view;
-		//cv::Mat message_view;
 	public:
 
 	private:
@@ -114,6 +114,13 @@ namespace stereo {
 		@return cv::Mat_<float> localDataCost
 		*/
 		cv::Mat_<float> getLocalDataCostPerLabel(int spInd, float dispar);
+
+		/**
+		@brief function to modify arm length to fit sub image
+		@return int
+		*/
+		int stereo::SPBPStereo::modifyCrossMapArmlengthToFitSubImage(const cv::Mat_<cv::Vec4b>& crMapIn,
+			int maxArmLength, cv::Mat_<cv::Vec4b>& crMapOut);
 
 		/**
 		@brief randomize disparity map
