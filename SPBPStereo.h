@@ -25,6 +25,7 @@ namespace stereo {
 		float maxDisparity;
 		int numOfK;
 		float alpha;
+		float lambda_smooth;
 		StereoParam() {
 			minDisparity = 0.0f;
 			maxDisparity = 20.0f;
@@ -53,11 +54,22 @@ namespace stereo {
 		int height;
 		cv::Mat leftGradImg;
 		cv::Mat rightGradImg;
-		cv::Mat_<float> dataCost_k;
-		cv::Mat_<float> label_k;
+		// data cost and correspondence label
+		cv::Mat_<float> dataCost_k; // data cost
+		cv::Mat_<float> label_k; // label, disparity
+		// message used in belief propagation
+		cv::Mat_<cv::Vec<float, 3>> message;
+		cv::Mat_<cv::Vec4f> smoothWeight;
 	public:
 
 	private:
+		/**
+		@brief tansfer vec3b to vec3f
+		@param cv::Vec3b input: input vec3b value
+		@return cv::Vec3f: return vec3f value
+		*/
+		cv::Vec3f vec3bToVec3f(cv::Vec3b input);
+
 		/**
 		@brief calculate gradient image
 		@return int
@@ -79,10 +91,10 @@ namespace stereo {
 		int randomDisparityMap();
 
 		/**
-		@brief init belief propagation variables
+		@brief belief propagation variables
 		@return int
 		*/
-		int initBeliefPropagation();
+		int beliefPropagation();
 
 		/**
 		@brief estimate depth image

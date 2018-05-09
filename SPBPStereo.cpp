@@ -14,6 +14,19 @@ stereo::SPBPStereo::~SPBPStereo() {}
 /*                          private functions                         */
 /**********************************************************************/
 /**
+@brief tansfer vec3b to vec3f
+@param cv::Vec3b input: input vec3b value
+@return cv::Vec3f: return vec3f value
+*/
+cv::Vec3f stereo::SPBPStereo::vec3bToVec3f(cv::Vec3b input) {
+	cv::Vec3f val;
+	val.val[0] = static_cast<float>(input.val[0]);
+	val.val[1] = static_cast<float>(input.val[1]);
+	val.val[2] = static_cast<float>(input.val[2]);
+	return val;
+}
+
+/**
 @brief calculate gradient image
 @return int
 */
@@ -62,7 +75,8 @@ cv::Mat_<float> stereo::SPBPStereo::getLocalDataCostPerLabel(int spInd, float di
 					+ abs(static_cast<float>(leftColorVal.val[2]) - static_cast<float>(rightColorVal.val[2]))) / 3;
 				float gradCost = (abs(static_cast<float>(leftGradVal.val[0]) - static_cast<float>(rightGradVal.val[0]))
 					+ abs(static_cast<float>(leftGradVal.val[1]) - static_cast<float>(rightGradVal.val[1]))) / 2;
-				localDataCost.at<float>(row, col) = (1 - param.alpha) * colorCost + param.alpha * gradCost;
+				localDataCost.at<float>(row, col) = (1 - param.alpha) * std::min<float>(colorCost, 10)
+				 	+ param.alpha * std::min<float>(gradCost, 2);
 			}
 			else {
 				localDataCost.at<float>(row, col) = 255;
@@ -115,17 +129,44 @@ int stereo::SPBPStereo::randomDisparityMap() {
 			costs[k] = this->getLocalDataCostPerLabel(i, labelVecs[k]);
 		}
 		// assign calculated data cost to dataCost_k
-		
+		int pt, px, py, lux, luy;
+        for (int spPxInd = 0; spPxInd < leftSpGraphPtr->nodes[i].pixels.size(); spPxInd ++) {
+            //cout<<ii<<endl;
+            pt = leftSpGraphPtr->nodes[i].pixels[spPxInd];
+            px = pt / width;
+            py = pt % width;
+			lux = leftSpGraphPtr->nodes[i].rangeExpand.val[0];
+			luy = leftSpGraphPtr->nodes[i].rangeExpand.val[1];
+            for (size_t k = 0; k < param.numOfK; k++) {
+                dataCost_k[pt][k] = costs[k].at<float>(px - lux, py - luy);
+            }
+        }	
 	}
+	// init message for belief propagation
+	message.create(width * height, 4);
+	message.setTo(0);
+	for (int i = 1; i < height - 1; ++i) {
+        for (int j = 1; j < width - 1; ++j) {
+            cv::Vec3f centerVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j));
+            cv::Vec3f upVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i - 1, j));
+            cv::Vec3f downVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i + 1, j));
+            cv::Vec3f leftVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j - 1));
+            cv::Vec3f rightVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j + 1));
+            smoothWeight[i][j][0] = param.lambda_smooth * std::exp(-cv::norm(centerVal - upVal) / 20.0f);
+            smoothWeight[i][j][1] = param.lambda_smooth * std::exp(-cv::norm(centerVal - downVal) / 20.0f);
+            smoothWeight[i][j][2] = param.lambda_smooth * std::exp(-cv::norm(centerVal - leftVal) / 20.0f);
+            smoothWeight[i][j][3] = param.lambda_smooth * std::exp(-cv::norm(centerVal - rightVal) / 20.0f);
+        }
+    }
 	return 0;
 }
 
 /**
-@brief init belief propagation variables
+@brief belief propagation variables
 @return int
 */
-int stereo::SPBPStereo::initBeliefPropagation() {
-	
+int stereo::SPBPStereo::beliefPropagation() {
+
 	return 0;
 }
 
