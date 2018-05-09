@@ -64,7 +64,7 @@ cv::Mat stereo::Visualizer::disparityToFlow(cv::Mat disparityMap) {
 	cv::Mat flow(disparityMap.rows, disparityMap.cols, CV_32FC2);
 	for (size_t row = 0; row < disparityMap.rows; row++) {
 		for (size_t col = 0; col < disparityMap.cols; col++) {
-			flow.at<cv::Point2f>(row, col) = cv::Point2f(disparityMap.at<int>(row, col), 0);
+			flow.at<cv::Point2f>(row, col) = cv::Point2f(disparityMap.at<float>(row, col), 0);
 		}
 	}
 	return flow;

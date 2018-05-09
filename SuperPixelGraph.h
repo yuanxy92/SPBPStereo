@@ -22,7 +22,7 @@ namespace stereo {
 		int algorithm; // algorithm used to create superpixels 
 		float ruler; // parameter to enforce the smoothness of superpixels
 		SuperPixelParam() {
-			regionSize = sqrt(1200.0f * 1000.0f / 1500.0f);
+			regionSize = sqrt(1200.0f * 1000.0f / 900.0f);
 			algorithm = cv::ximgproc::SLIC;
 			ruler = 50.0f;
 		}

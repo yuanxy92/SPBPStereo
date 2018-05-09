@@ -19,6 +19,9 @@
 
 namespace stereo {
 
+#define NUM_TOP_K 3
+#define EPS 0.01
+
 	// param for stereo estimation
 	struct StereoParam {
 		float minDisparity;
@@ -26,11 +29,16 @@ namespace stereo {
 		int numOfK;
 		float alpha;
 		float lambda_smooth;
+		int iterNum;
+		float tau_s;
 		StereoParam() {
 			minDisparity = 0.0f;
 			maxDisparity = 20.0f;
-			numOfK = 3;
-			alpha = 0.9;
+			numOfK = NUM_TOP_K;
+			alpha = 0.8f;
+			iterNum = 8;
+			tau_s = 2.0f;
+			lambda_smooth = 0.0f;
 		}
 	};
 
@@ -42,7 +50,7 @@ namespace stereo {
 		cv::Mat depthImg;
 		cv::Mat leftImg;
 		cv::Mat rightImg;
-		cv::Mat disparityMap;
+		cv::Mat_<float> disparityMap;
 		// superpixel creator
 		std::shared_ptr<SPGraph> leftSpGraphPtr;
 		std::shared_ptr<SuperPixelGraph> spCreatorPtr;
@@ -58,7 +66,7 @@ namespace stereo {
 		cv::Mat_<float> dataCost_k; // data cost
 		cv::Mat_<float> label_k; // label, disparity
 		// message used in belief propagation
-		cv::Mat_<cv::Vec<float, 3>> message;
+		cv::Mat_<cv::Vec<float, NUM_TOP_K>> message;
 		cv::Mat_<cv::Vec4f> smoothWeight;
 	public:
 
@@ -69,6 +77,12 @@ namespace stereo {
 		@return cv::Vec3f: return vec3f value
 		*/
 		cv::Vec3f vec3bToVec3f(cv::Vec3b input);
+
+		/**
+		@brief estimate disparity map from data cost 
+		@return int
+		*/
+		int estimateDisparity();
 
 		/**
 		@brief calculate gradient image
@@ -89,6 +103,16 @@ namespace stereo {
 		@return int
 		*/
 		int randomDisparityMap();
+
+		/**
+		@brief compute messages in belief propagation 
+		@param const float* dis_belief: input dis-belief
+		@param int p: input  
+		*/
+		float computeBPPerLabel(const float* dis_belief,
+								int p,
+								const float& disp_ref,
+								float wt, float tau_s);
 
 		/**
 		@brief belief propagation variables
