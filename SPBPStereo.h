@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <thread>
 #include <memory>
+#include <bitset>
 
 #include <opencv2/opencv.hpp>
 
@@ -22,6 +23,7 @@ namespace stereo {
 
 #define NUM_TOP_K 3
 #define EPS 0.01
+#define CENSUS_WINDOW_SIZE 11
 
 	// param for stereo estimation
 	struct StereoParam {
@@ -32,14 +34,16 @@ namespace stereo {
 		float lambda_smooth;
 		int iterNum;
 		float tau_s;
+		int lbp_gap;
 		StereoParam() {
 			minDisparity = 0.0f;
-			maxDisparity = 25.0f;
+			maxDisparity = 50.0f;
 			numOfK = NUM_TOP_K;
 			alpha = 0.9f;
-			iterNum = 5;
-			tau_s = 0.0f;
-			lambda_smooth = 1.0f;
+			iterNum = 8;
+			tau_s = 50.0f;
+			lambda_smooth = 3.0f;
+			lbp_gap = 1;
 		}
 	};
 
@@ -65,8 +69,10 @@ namespace stereo {
 		cv::Mat rightGradImg;
 		cv::Mat leftSmoothImg;
 		cv::Mat rightSmoothImg;
-		cv::Mat leftLBPImg;
-		cv::Mat rightLBPImg;
+		std::vector<std::vector<std::bitset<CENSUS_WINDOW_SIZE
+			* CENSUS_WINDOW_SIZE>>> leftLBPImg;
+		std::vector<std::vector<std::bitset<CENSUS_WINDOW_SIZE
+			* CENSUS_WINDOW_SIZE>>> rightLBPImg;
 		// data cost and correspondence label
 		cv::Mat_<float> dataCost_k; // data cost
 		cv::Mat_<float> label_k; // label, disparity
@@ -74,6 +80,8 @@ namespace stereo {
 		cv::Mat_<cv::Vec<float, NUM_TOP_K>> message;
 		cv::Mat_<cv::Vec4f> smoothWeight;
 		// guide map used for aggregate cost
+		float expCensusDiffTable[CENSUS_WINDOW_SIZE * CENSUS_WINDOW_SIZE + 1];
+		float expColorDiffTable[256];
 		std::vector<int> hammingDist;
 		std::shared_ptr<CFFilter> cfPtr;
 		std::vector<cv::Mat_<cv::Vec4b>> guideMaps;
@@ -89,12 +97,22 @@ namespace stereo {
 		cv::Vec3f vec3bToVec3f(cv::Vec3b input);
 
 		/**
+		@brief push new elements into vector
+		@param std::vector<float> & vecs: input vectors
+		@param float val: input new value
+		@return int
+		*/
+		int pushNewElements(std::vector<float> & vecs, float val);
+
+		/**
 		@brief feature calculation
 		@param cv::Mat src: input image matrix
 		@param cv::Mat dst: output lbp feature image
 		@return int
 		*/
-		int calcLBPFeature(cv::Mat& src, cv::Mat& dst);
+		int calcLBPFeature(cv::Mat& src, 
+			std::vector<std::vector<std::bitset<CENSUS_WINDOW_SIZE
+			* CENSUS_WINDOW_SIZE>>> & dst);
 
 		/**
 		@brief get hamming distance

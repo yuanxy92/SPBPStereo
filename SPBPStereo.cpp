@@ -7,6 +7,8 @@
 #include "SPBPStereo.h"
 #include <opencv2/ximgproc.hpp>
 
+#define _DEBUG_SPBP
+
 stereo::SPBPStereo::SPBPStereo() {}
 stereo::SPBPStereo::~SPBPStereo() {}
 
@@ -27,32 +29,66 @@ cv::Vec3f stereo::SPBPStereo::vec3bToVec3f(cv::Vec3b input) {
 }
 
 /**
-@brief feature calculation
-@param cv::Mat input: input image matrix
-@param cv::Mat output: output lbp feature image
+@brief push new elements into vector
+@param std::vector<float> & vecs: input vectors
+@param float val: input new value
 @return int
 */
-int stereo::SPBPStereo::calcLBPFeature(cv::Mat& src, cv::Mat& dst) {
+int stereo::SPBPStereo::pushNewElements(std::vector<float> & vecs, float val) {
+	bool exist = false;
+	for (size_t i = 0; i < vecs.size(); i++) {
+		if (abs(val - vecs[i]) < EPS) {
+			exist = true;
+			return false;
+		}
+	}
+	vecs.push_back(val);
+	return true;
+}
+
+/**
+@brief feature calculation
+@param cv::Mat src: input image matrix
+@param cv::Mat dst: output lbp feature image
+@return int
+*/
+int stereo::SPBPStereo::calcLBPFeature(cv::Mat& src,
+	std::vector<std::vector<std::bitset<CENSUS_WINDOW_SIZE
+	* CENSUS_WINDOW_SIZE>>> & dst) {
+	// change to gray image
 	cv::Mat input;
 	if (src.channels() > 1) 
 		cv::cvtColor(src, input, cv::COLOR_BGR2GRAY);
 	else input = src;
-	dst = cv::Mat::zeros(input.rows, input.cols, CV_8UC1);
-	for (int i = 1; i< input.rows - 1; i++) {
-		for (int j = 1; j< input.cols - 1; j++) {
-			uchar center = input.at<uchar>(i, j);
-			unsigned char code = 0;
-			code |= (input.at<uchar>(i - 1, j - 1) > center) << 7;
-			code |= (input.at<uchar>(i - 1, j) > center) << 6;
-			code |= (input.at<uchar>(i - 1, j + 1) > center) << 5;
-			code |= (input.at<uchar>(i, j + 1) > center) << 4;
-			code |= (input.at<uchar>(i + 1, j + 1) > center) << 3;
-			code |= (input.at<uchar>(i + 1, j) > center) << 2;
-			code |= (input.at<uchar>(i + 1, j - 1) > center) << 1;
-			code |= (input.at<uchar>(i, j - 1) > center) << 0;
-			dst.at<unsigned char>(i, j) = code;
+	// init vector
+	dst.resize(src.rows);
+	for (size_t i = 0; i < dst.size(); i++) {
+		dst[i].resize(src.cols);
+	}
+	int gap = param.lbp_gap;
+	// calculate census transform
+	int hei_side = (CENSUS_WINDOW_SIZE - 1) / 2;
+	int wid_side = (CENSUS_WINDOW_SIZE - 1) / 2;
+	int tempValue;
+	for (size_t row = 0; row < src.rows; row ++) {
+		for (size_t col = 0; col < src.cols; col ++) {
+			uchar centerValue = input.at<uchar>(row, col);
+			int censusIdx = 0;
+			for (int y = -hei_side * gap; y <= hei_side * gap; y = y + gap) {
+				for (int x = -wid_side * gap; x <= wid_side * gap; x = x + gap) {
+					if (row + y < 0 || row + y >= src.rows || col + x < 0 || col + x >= src.cols) {
+						tempValue = centerValue;
+					}
+					else {
+						tempValue = input.at<uchar>(row + y, col + x);
+					}
+					dst[row][col][censusIdx] = centerValue > tempValue ? 1 : 0;
+					++censusIdx;
+				}
+			}
 		}
 	}
+	
 	return 0;
 }
 
@@ -90,7 +126,7 @@ int stereo::SPBPStereo::estimateDisparity() {
 					minInd = k;
 				}
 			}
-			disparityMap[row][col] = label_k[ind][minInd];
+			disparityMap[row][col] = label_k[ind][0];
 		}
 	}
 	return 0;
@@ -177,26 +213,24 @@ cv::Mat_<float> stereo::SPBPStereo::getLocalDataCostPerLabel(int spInd, float di
 				float colorCost = (abs(static_cast<float>(leftColorVal.val[0]) - static_cast<float>(rightColorVal.val[0]))
 					+ abs(static_cast<float>(leftColorVal.val[1]) - static_cast<float>(rightColorVal.val[1]))
 					+ abs(static_cast<float>(leftColorVal.val[2]) - static_cast<float>(rightColorVal.val[2]))) / 3;
-				float gradCost = (abs(static_cast<float>(leftGradVal.val[0]) - static_cast<float>(rightGradVal.val[0]))
-					+ abs(static_cast<float>(leftGradVal.val[1]) - static_cast<float>(rightGradVal.val[1]))) / 2;
-				localDataCost.at<float>(row, col) = (1 - param.alpha) * std::min<float>(colorCost, 10)
-				 	+ param.alpha * std::min<float>(gradCost, 2);
-				uchar leftLBP = leftLBPImg.at<uchar>(row + rect.y, col + rect.x);
-				uchar rightLBP = rightLBPImg.at<uchar>(row + rect.y, col + rect.x - dispar);
-				localDataCost(row, col) = getHammingDist(leftLBP, rightLBP) * 2 + std::min<float>(colorCost, 8) +
-					std::min<float>(gradCost, 8);
+				//float gradCost = (abs(static_cast<float>(leftGradVal.val[0]) - static_cast<float>(rightGradVal.val[0]))
+				//	+ abs(static_cast<float>(leftGradVal.val[1]) - static_cast<float>(rightGradVal.val[1]))) / 2;
+				//localDataCost.at<float>(row, col) = (1 - param.alpha) * std::min<float>(colorCost, 10)
+				// 	+ param.alpha * std::min<float>(gradCost, 2);
+				std::bitset<CENSUS_WINDOW_SIZE * CENSUS_WINDOW_SIZE> leftLBP = leftLBPImg[row + rect.y][col + rect.x];
+				std::bitset<CENSUS_WINDOW_SIZE * CENSUS_WINDOW_SIZE> rightLBP = rightLBPImg[row + rect.y][col + rect.x - dispar];
+				float dist_css = expCensusDiffTable[(leftLBP ^ rightLBP).count()];
+				float dist_ce = expColorDiffTable[static_cast<int>(colorCost)];
+				localDataCost(row, col) = 255 * (dist_css + dist_ce);
 			}
 			else {
-				localDataCost(row, col) = 30.0f;
+				localDataCost(row, col) = 0.0f;
 			}
 		}
 	}
-	//std::cout << cv::format("Calculate data cost sp %d ...", spInd) << std::endl;
-	// aggregate cost using using guide filter
-	//leftSmoothImg(rect).copyTo(colorPatch);
-	//cv::ximgproc::guidedFilter(colorPatch, localDataCost, localDataCost, 9, 4);
-	//cv::GaussianBlur(localDataCost, localDataCost, cv::Size(12, 12), 5, 5, cv::BORDER_REPLICATE);
-	cfPtr->FastCLMF0FloatFilterPointer(guideMaps[spInd], localDataCost, localDataCost);
+	leftImg(rect).copyTo(colorPatch);
+	cv::ximgproc::guidedFilter(colorPatch, localDataCost, localDataCost, 9, 4); 
+	//cfPtr->FastCLMF0FloatFilterPointer(guideMaps[spInd], localDataCost, localDataCost);
 	return localDataCost;
 }
 
@@ -258,11 +292,10 @@ int stereo::SPBPStereo::randomDisparityMap() {
 	dataCost_k.create(width * height, param.numOfK);
 	label_k.create(width * height, param.numOfK);
 	// generate hamming dist
-	hammingDist.resize(256);
-	for (size_t i = 0; i < 256; i++) {
-		uchar val = static_cast<uchar>(i);
-		hammingDist[i] = hdist<uchar>(i, 0);
-	}
+	for (int i = 0; i <= CENSUS_WINDOW_SIZE * CENSUS_WINDOW_SIZE + 1; i ++)
+		expCensusDiffTable[i] = 1.0 - exp(-i/30.0f);
+	for (int i = 0; i < 256; i ++)
+		expColorDiffTable[i] = 1.0 - exp(-i/60.0f);
 	// randomize 
 	for (size_t i = 0; i < leftSpGraphPtr->num; i++) { // i is super pixel index
 		int k = 0;
@@ -337,7 +370,8 @@ int stereo::SPBPStereo::randomDisparityMap() {
 	message.create(width * height, 4);
 	message.setTo(cv::Scalar(0, 0, 0));
 	smoothWeight.create(height, width);
-	smoothWeight.setTo(cv::Scalar(0, 0, 0, 0));
+	smoothWeight.setTo(cv::Scalar(param.lambda_smooth, param.lambda_smooth,
+		param.lambda_smooth, param.lambda_smooth));
 	for (int i = 0; i < height; ++i) {
         for (int j = 0; j < width; ++j) {
             cv::Vec3f centerVal = vec3bToVec3f(leftImg.at<cv::Vec3b>(i, j));
@@ -373,7 +407,7 @@ float stereo::SPBPStereo::computeBPPerLabel(const float* dis_belief,
 	float min_cost = 1e5;
 	for (int k = 0; k < NUM_TOP_K; ++k) {
 		float label_val = label_k[p][k];
-		float cost_tp = dis_belief[k] + wt * std::min<float>(abs(disp_ref - label_val), tau_s);
+		float cost_tp = dis_belief[k] + wt * std::min<float>(pow(disp_ref - label_val, 2), tau_s);
 		if (cost_tp < min_cost)
 			min_cost = cost_tp;
 	}
@@ -408,7 +442,6 @@ int stereo::SPBPStereo::beliefPropagation() {
 	// start belief propagation
 	int spBegin, spEnd, spStep;
 	for (size_t iter = 0; iter < param.iterNum; iter++) {
-		param.tau_s *= 2;
 		// clear neighbor lable vector
 		if (iter % 2) {
 			spBegin = leftSpGraphPtr->num - 1, spEnd = -1, spStep = -1;
@@ -425,50 +458,30 @@ int stereo::SPBPStereo::beliefPropagation() {
 			std::set<int>& sAdj = leftSpGraphPtr->nodes[spInd].adjs;
 			int ind = 0;
 			// get labels from neighbor superpixels
-			for (sIt = sAdj.begin(); sIt != sAdj.end(); ++sIt) {
+			for (sIt = sAdj.begin(); sIt != sAdj.end(); sIt ++ ) {
 				//repPixels1[*sIt] = superpixelsList1[*sIt][ind];
 				leftSpGraphPtr->nodes[*sIt].repInd = leftSpGraphPtr->nodes[*sIt].
 					pixels[rand() % leftSpGraphPtr->nodes[*sIt].pixels.size()];
 				float test_label;
 				for (int k = 0; k < NUM_TOP_K; k++) {
-					//test_label= cur_label_k[k];
 					test_label = label_k[leftSpGraphPtr->nodes[*sIt].repInd][k];
-					bool isNew = true;
-					for (size_t labelInd = 0; labelInd < vec_label_nei.size(); labelInd++) {
-						if (abs(test_label - vec_label_nei[labelInd]) <= EPS) {
-							isNew = false;
-							break;
-						}
-					}
-					if (isNew) {
-						vec_label_nei.push_back(test_label);
-					}
+					pushNewElements(vec_label_nei, test_label);
 				}
 			}
-			// get labels from neighbor superpixels with random search
-			leftSpGraphPtr->nodes[spInd].repInd = leftSpGraphPtr->nodes[spInd].
-				pixels[rand() % leftSpGraphPtr->nodes[spInd].pixels.size()];
-			for (size_t k = 0; k < NUM_TOP_K; k++) {
-				float test_label = label_k[leftSpGraphPtr->nodes[spInd].repInd][k];
-				float mag = (param.maxDisparity - param.minDisparity) / 8.0f;
-				for (; mag >= 1.0f; mag /= 2.0f) {
-					float test_label_random = test_label + ((float(rand()) / RAND_MAX) - 0.5) * 2.0 * mag;
-					if (test_label_random >= param.minDisparity && test_label_random <= param.maxDisparity) {
-						bool isNew = true;
-						for (size_t labelInd = 0; labelInd < vec_label_nei.size(); labelInd++) {
-							if (abs(test_label_random - vec_label_nei[labelInd]) <= EPS) {
-								isNew = false;
-								break;
-							}
-						}
-						if (isNew) {
-							vec_label_nei.push_back(test_label_random);
-						}
-					}
-				}
-			}
+
 			// calculate data cost
 			const int vec_size = vec_label_nei.size();
+
+#ifdef _DEBUG_SPBP1
+			std::cout << cv::format("Superpixel %d, neighbor labels: %f, %f, %f\n", 
+				spInd, label_k[leftSpGraphPtr->nodes[spInd].repInd][0], 
+				label_k[leftSpGraphPtr->nodes[spInd].repInd][1],
+				label_k[leftSpGraphPtr->nodes[spInd].repInd][2]);
+			for (size_t i = 0; i < vec_size; i++)
+				std::cout << vec_label_nei[i] << "\t";
+			std::cout << std::endl;
+#endif
+
 			std::vector<cv::Mat_<float>> dataCost_nei(vec_size);
 			for (size_t neiInd = 0; neiInd < vec_size; neiInd++) {
 				dataCost_nei[neiInd] = getLocalDataCostPerLabel(spInd, vec_label_nei[neiInd]);
@@ -545,67 +558,72 @@ int stereo::SPBPStereo::beliefPropagation() {
 					cv::Vec4f wt_s = smoothWeight[by][bx];
 					for (int k = 0; k < NUM_TOP_K; ++k) {
 						float test_label = label_k[pcenter][k];
-						vec_label.push_back(test_label);
-						float dcost = dataCost_k[pcenter][k];
-						vec_d_cost.push_back(dcost);
-						float _mes_l = 0, _mes_r = 0, _mes_u = 0, _mes_d = 0;
-						if (bx != 0) {
-							_mes_l = computeBPPerLabel(disBelief_l, pl, test_label, wt_s[0], param.tau_s);
-							vec_mes_l.push_back(_mes_l);
+						if (pushNewElements(vec_label, test_label)) {
+							float dcost = dataCost_k[pcenter][k];
+							vec_d_cost.push_back(dcost);
+							float _mes_l = 0, _mes_r = 0, _mes_u = 0, _mes_d = 0;
+							if (bx != 0) {
+								_mes_l = computeBPPerLabel(disBelief_l, pl, test_label, wt_s[0], param.tau_s);
+								vec_mes_l.push_back(_mes_l);
+							}
+							if (bx != width - 1) {
+								_mes_r = computeBPPerLabel(disBelief_r, pr, test_label, wt_s[1], param.tau_s);
+								vec_mes_r.push_back(_mes_r);
+							}
+							if (by != 0) {
+								_mes_u = computeBPPerLabel(disBelief_u, pu, test_label, wt_s[2], param.tau_s);
+								vec_mes_u.push_back(_mes_u);
+							}
+							if (by != height - 1) {
+								_mes_d = computeBPPerLabel(disBelief_d, pd, test_label, wt_s[3], param.tau_s);
+								vec_mes_d.push_back(_mes_d);
+							}
+							vec_belief.push_back(_mes_l + _mes_r + _mes_u + _mes_d + dcost);
 						}
-						if (bx != width - 1) {
-							_mes_r = computeBPPerLabel(disBelief_r, pr, test_label, wt_s[1], param.tau_s);
-							vec_mes_r.push_back(_mes_r);
-						}
-						if (by != 0) {
-							_mes_u = computeBPPerLabel(disBelief_u, pu, test_label, wt_s[2], param.tau_s);
-							vec_mes_u.push_back(_mes_u);
-						}
-						if (by != height - 1) {
-							_mes_d = computeBPPerLabel(disBelief_d, pd, test_label, wt_s[3], param.tau_s);
-							vec_mes_d.push_back(_mes_d);
-						}
-						vec_belief.push_back(_mes_l + _mes_r + _mes_u + _mes_d + dcost);
 					}
 					// update messages with propagation and random search labels
 					float lux = leftSpGraphPtr->nodes[spInd].rangeExpand.val[0];
 					float luy = leftSpGraphPtr->nodes[spInd].rangeExpand.val[1];
 					for (int test_id = 0; test_id < vec_label_nei.size(); ++test_id) {
 						float test_label = vec_label_nei[test_id];
-						vec_label.push_back(test_label);
-						const cv::Mat_<float>& local = dataCost_nei[test_id];
-						float dcost = dataCost_nei[test_id].at<float>(by - luy, bx - lux);
-						vec_d_cost.push_back(dcost);
-						//start_disp = clock();
-						float _mes_l = 0, _mes_r = 0, _mes_u = 0, _mes_d = 0;
-						if (bx != 0) {
-							_mes_l = computeBPPerLabel(disBelief_l, pl, test_label, wt_s[0], param.tau_s);
-							vec_mes_l.push_back(_mes_l);
+						if (pushNewElements(vec_label, test_label)) {
+							const cv::Mat_<float>& local = dataCost_nei[test_id];
+							float dcost = dataCost_nei[test_id].at<float>(by - luy, bx - lux);
+							vec_d_cost.push_back(dcost);
+							//start_disp = clock();
+							float _mes_l = 0, _mes_r = 0, _mes_u = 0, _mes_d = 0;
+							if (bx != 0) {
+								_mes_l = computeBPPerLabel(disBelief_l, pl, test_label, wt_s[0], param.tau_s);
+								vec_mes_l.push_back(_mes_l);
+							}
+							if (bx != width - 1) {
+								_mes_r = computeBPPerLabel(disBelief_r, pr, test_label, wt_s[1], param.tau_s);
+								vec_mes_r.push_back(_mes_r);
+							}
+							if (by != 0) {
+								_mes_u = computeBPPerLabel(disBelief_u, pu, test_label, wt_s[2], param.tau_s);
+								vec_mes_u.push_back(_mes_u);
+							}
+							if (by != height - 1) {
+								_mes_d = computeBPPerLabel(disBelief_d, pd, test_label, wt_s[3], param.tau_s);
+								vec_mes_d.push_back(_mes_d);
+							}
+							vec_belief.push_back(_mes_l + _mes_r + _mes_u + _mes_d + dcost);
 						}
-						if (bx != width - 1) {
-							_mes_r = computeBPPerLabel(disBelief_r, pr, test_label, wt_s[1], param.tau_s);
-							vec_mes_r.push_back(_mes_r);
-						}
-						if (by != 0) {
-							_mes_u = computeBPPerLabel(disBelief_u, pu, test_label, wt_s[2], param.tau_s);
-							vec_mes_u.push_back(_mes_u);
-						}
-						if (by != height - 1) {
-							_mes_d = computeBPPerLabel(disBelief_d, pd, test_label, wt_s[3], param.tau_s);
-							vec_mes_d.push_back(_mes_d);
-						}
-						vec_belief.push_back(_mes_l + _mes_r + _mes_u + _mes_d + dcost);
 					}
 					// compute top k labels with most confident disparities
 					size_t vec_in_size = vec_belief.size();
+					int id;
 					for (int i = 0; i < NUM_TOP_K; i++) {
-						float belief_min = vec_belief[i];
-						int id = i;
-						for (size_t j = i + 1; j < vec_in_size; j++) {
+						float belief_min = 999999999;
+						float belief_max = 0;
+						for (size_t j = 0; j < vec_in_size; j++) {
 							if (vec_belief[j] < belief_min) {
 								belief_min = vec_belief[j];
 								id = j;
 							}
+							if (vec_belief[j] > belief_max)
+								belief_max = vec_belief[j];
 						}
 						if (!vec_mes_l.empty())
 							message[pcenter][0][i] = vec_mes_l[id];
@@ -617,17 +635,13 @@ int stereo::SPBPStereo::beliefPropagation() {
 							message[pcenter][3][i] = vec_mes_d[id];
 						label_k[pcenter][i] = vec_label[id];
 						dataCost_k[pcenter][i] = vec_d_cost[id];
-						vec_belief[id] = vec_belief[i];
-						if (!vec_mes_l.empty())
-							vec_mes_l[id] = vec_mes_l[i];
-						if (!vec_mes_r.empty())
-							vec_mes_r[id] = vec_mes_r[i];
-						if (!vec_mes_u.empty())
-							vec_mes_u[id] = vec_mes_u[i];
-						if (!vec_mes_d.empty())
-							vec_mes_d[id] = vec_mes_d[i];
-						vec_label[id] = vec_label[i];
-						vec_d_cost[id] = vec_d_cost[i];
+
+						vec_belief[id] = belief_max + 1;
+						belief_max++;
+#ifdef _DEBUG_SPBP1		
+						std::cout << cv::format("Superpixel %d, k = %d, choose lable = %f\n",
+							spInd, i, vec_label[id]) << std::endl;
+#endif
 					}
 					// message normalization
 					for (int i = 0; i < 4; i++) {

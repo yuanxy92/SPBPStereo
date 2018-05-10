@@ -132,7 +132,7 @@ int stereo::SuperPixelGraph::init(SuperPixelParam param) {
 std::shared_ptr<stereo::SPGraph> stereo::SuperPixelGraph::createSuperPixelGraph(cv::Mat img) {
 	std::shared_ptr<stereo::SPGraph> spGraph = std::make_shared<stereo::SPGraph>();
 	// create superpixel
-	param.regionSize = sqrt(img.rows * img.cols / 1000.0f);
+	param.regionSize = sqrt(img.rows * img.cols / 1500.0f);
 	cv::Ptr<cv::ximgproc::SuperpixelSLIC> slic =
 		cv::ximgproc::createSuperpixelSLIC(img, param.algorithm,
 			param.regionSize, param.ruler);

@@ -24,7 +24,7 @@ namespace stereo {
 		SuperPixelParam() {
 			regionSize = sqrt(1200.0f * 1000.0f / 1000.0f);
 			algorithm = cv::ximgproc::SLIC;
-			ruler = 50.0f;
+			ruler = 5.0f;
 		}
 		SuperPixelParam(int regionSize, int algorithm, float ruler) {
 			this->regionSize = regionSize;
