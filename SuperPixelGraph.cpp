@@ -14,6 +14,101 @@ stereo::SuperPixelGraph::~SuperPixelGraph() {}
 /*************************************************************************/
 /*                           private functions                           */
 /*************************************************************************/
+/**
+@brief tansfer vec3b to vec3f
+@param cv::Vec3b input: input vec3b value
+@return cv::Vec3f: return vec3f value
+*/
+cv::Vec3f stereo::SuperPixelGraph::vec3bToVec3f(cv::Vec3b input) {
+	cv::Vec3f val;
+	val.val[0] = static_cast<float>(input.val[0]);
+	val.val[1] = static_cast<float>(input.val[1]);
+	val.val[2] = static_cast<float>(input.val[2]);
+	return val;
+}
+
+/**
+@brief build non local graph to speed up belief propagation
+@param cv::Mat img: input image
+@param std::shared_ptr<SPGraph> spGraph: input/output superpixel graph
+@return int
+*/
+int stereo::SuperPixelGraph::buildNonLocalGraph(cv::Mat img, 
+	std::shared_ptr<stereo::SPGraph> spGraph) {
+	const float max_disparity = 40;
+	const float sigmaSpatial = max_disparity * max_disparity;
+	const float sigmaColor = 25.0 * 25.0;
+	const float max_spatial_distance = max_disparity * max_disparity * 6.25;
+	int spInd1, spInd2;
+	int sampleNum = 30;
+	int topk = 5;
+	int width = img.cols;
+	int height = img.rows;
+	for (spInd1 = 0; spInd1 < spGraph->num; spInd1++) {
+		std::vector<NonLocalCandidate> candVecs;
+		candVecs.clear();
+		int spIndSize1 = spGraph->nodes[spInd1].pixels.size();
+		cv::Point2i p1, p2;
+		for (spInd2 = 0; spInd2 < spGraph->num; spInd2++) {
+			if (spInd1 == spInd2)
+				continue;
+			int spIndSize2 = spGraph->nodes[spInd2].pixels.size();
+			float sumWeight = 0;
+			int pxInd;
+			for (pxInd = 0; pxInd < sampleNum; pxInd++) {
+				int p1Ind = spGraph->nodes[spInd1].pixels[rand() % spIndSize1];
+				p1.y = p1Ind / width;
+				p1.x = p1Ind % width;
+				int p2Ind = spGraph->nodes[spInd2].pixels[rand() % spIndSize2];
+				p2.y = p2Ind / width;
+				p2.x = p2Ind % width;
+
+				float tmpSpatial = pow(p1.x - p2.x, 2) + pow(p1.y - p2.y, 2);
+				if (tmpSpatial > max_spatial_distance) {
+					break;
+				}
+
+				cv::Vec3f pxVal1, pxVal2;
+				pxVal1 = vec3bToVec3f(img.at<cv::Vec3b>(p1.y, p1.x));
+				pxVal2 = vec3bToVec3f(img.at<cv::Vec3b>(p2.y, p2.x));
+				float tmpColor = pow(pxVal1[0] - pxVal2[0], 2)
+					+ pow(pxVal1[1] - pxVal2[1], 2)
+					+ pow(pxVal1[2] - pxVal2[2], 2);
+				float colorDis = exp(-tmpColor / sigmaColor);
+				sumWeight += colorDis;
+			}
+			if (pxInd >= sampleNum)
+				candVecs.push_back(NonLocalCandidate(sumWeight, spInd2));
+		}
+
+		std::sort(candVecs.begin(), candVecs.end(), NonLocalCandidate::larger);
+
+		int canId = 0;
+		int totalNeighbors = 0;
+		for (canId = 0; canId < candVecs.size(); canId ++) {
+			if (candVecs[canId].sumWeight < sampleNum * 0.2)
+				break;
+			int tmpId = candVecs[canId].spInd;
+			// not itself
+			if (tmpId != spInd1) {
+				// not in its spatial adjacency list
+				std::set<int>::iterator sIt;
+				std::set<int>& sAdj = spGraph->nodes[spInd1].adjs;
+				for (sIt = sAdj.begin(); sIt != sAdj.end(); sIt++) {
+					if (tmpId == *sIt)
+						break;
+				}
+				if (sIt == sAdj.end()) {
+					spGraph->nodes[spInd1].adjs.insert(tmpId);
+					spGraph->nodes[tmpId].adjs.insert(spInd1);
+					if (totalNeighbors++ > topk)
+						break;
+				}
+			}
+		}
+	}
+	return 0;
+}
 
 
 /*************************************************************************/
@@ -117,6 +212,8 @@ std::shared_ptr<stereo::SPGraph> stereo::SuperPixelGraph::createSuperPixelGraph(
 				spGraph->nodes[label].range.val[3] = row;
 		}
 	}
+	// create non-local graph
+	this->buildNonLocalGraph(img, spGraph);
 	// calculate expanded range
 	int expand = 20;
 	for (size_t i = 0; i < spGraph->nodes.size(); i++) {

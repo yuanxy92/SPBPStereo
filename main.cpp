@@ -1,6 +1,8 @@
 #include "SPBPStereo.h"
+#include <time.h>
 
 int main(int argc, char* argv[]) {
+	srand(12345);
 	//cv::Mat img1 = cv::imread("im2.png");
 	cv::Mat img1 = cv::imread("E:\\data\\giga_stereo\\1\\data\\0\\0000.jpg");
 	//cv::Mat img2 = cv::imread("im6.png");

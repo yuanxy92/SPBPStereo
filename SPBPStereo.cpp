@@ -57,6 +57,17 @@ int stereo::SPBPStereo::calcLBPFeature(cv::Mat& src, cv::Mat& dst) {
 }
 
 /**
+@brief get hamming distance
+@param uchar feature1: first uchar feature
+@param uchar feature2: first uchar feature
+@return int
+*/
+int stereo::SPBPStereo::getHammingDist(uchar feature1, uchar feature2) {
+	uchar andFeature = feature1 ^ feature2;
+	return hammingDist[static_cast<int>(andFeature)];
+}
+
+/**
 @brief estimate disparity map from data cost
 @return int
 */
@@ -159,29 +170,30 @@ cv::Mat_<float> stereo::SPBPStereo::getLocalDataCostPerLabel(int spInd, float di
 	for (size_t row = 0; row < rect.height; row++) {
 		for (size_t col = 0; col < rect.width; col++) {
 			if (col + rect.x - dispar < rightImg.cols && col + rect.x - dispar >= 0) {
-				//cv::Vec3b leftColorVal = leftImg.at<cv::Vec3b>(row + rect.y, col + rect.x);
-				//cv::Vec3b rightColorVal = rightImg.at<cv::Vec3b>(row + rect.y, col + rect.x - dispar);
-				//cv::Vec2b leftGradVal = leftGradImg.at<cv::Vec2b>(row + rect.y, col + rect.x);
-				//cv::Vec2b rightGradVal = rightGradImg.at<cv::Vec2b>(row + rect.y, col + rect.x - dispar);
-				//float colorCost = (abs(static_cast<float>(leftColorVal.val[0]) - static_cast<float>(rightColorVal.val[0]))
-				//	+ abs(static_cast<float>(leftColorVal.val[1]) - static_cast<float>(rightColorVal.val[1]))
-				//	+ abs(static_cast<float>(leftColorVal.val[2]) - static_cast<float>(rightColorVal.val[2]))) / 3;
-				//float gradCost = (abs(static_cast<float>(leftGradVal.val[0]) - static_cast<float>(rightGradVal.val[0]))
-				//	+ abs(static_cast<float>(leftGradVal.val[1]) - static_cast<float>(rightGradVal.val[1]))) / 2;
-				//localDataCost.at<float>(row, col) = (1 - param.alpha) * std::min<float>(colorCost, 10)
-				// 	+ param.alpha * std::min<float>(gradCost, 2);
+				cv::Vec3b leftColorVal = leftImg.at<cv::Vec3b>(row + rect.y, col + rect.x);
+				cv::Vec3b rightColorVal = rightImg.at<cv::Vec3b>(row + rect.y, col + rect.x - dispar);
+				cv::Vec2b leftGradVal = leftGradImg.at<cv::Vec2b>(row + rect.y, col + rect.x);
+				cv::Vec2b rightGradVal = rightGradImg.at<cv::Vec2b>(row + rect.y, col + rect.x - dispar);
+				float colorCost = (abs(static_cast<float>(leftColorVal.val[0]) - static_cast<float>(rightColorVal.val[0]))
+					+ abs(static_cast<float>(leftColorVal.val[1]) - static_cast<float>(rightColorVal.val[1]))
+					+ abs(static_cast<float>(leftColorVal.val[2]) - static_cast<float>(rightColorVal.val[2]))) / 3;
+				float gradCost = (abs(static_cast<float>(leftGradVal.val[0]) - static_cast<float>(rightGradVal.val[0]))
+					+ abs(static_cast<float>(leftGradVal.val[1]) - static_cast<float>(rightGradVal.val[1]))) / 2;
+				localDataCost.at<float>(row, col) = (1 - param.alpha) * std::min<float>(colorCost, 10)
+				 	+ param.alpha * std::min<float>(gradCost, 2);
 				uchar leftLBP = leftLBPImg.at<uchar>(row + rect.y, col + rect.x);
 				uchar rightLBP = rightLBPImg.at<uchar>(row + rect.y, col + rect.x - dispar);
-				localDataCost(row, col) = hdist<uchar>(leftLBP, rightLBP);
+				localDataCost(row, col) = getHammingDist(leftLBP, rightLBP) * 2 + std::min<float>(colorCost, 8) +
+					std::min<float>(gradCost, 8);
 			}
 			else {
-				localDataCost(row, col) = 8.0f;
+				localDataCost(row, col) = 30.0f;
 			}
 		}
 	}
 	//std::cout << cv::format("Calculate data cost sp %d ...", spInd) << std::endl;
 	// aggregate cost using using guide filter
-	leftSmoothImg(rect).copyTo(colorPatch);
+	//leftSmoothImg(rect).copyTo(colorPatch);
 	//cv::ximgproc::guidedFilter(colorPatch, localDataCost, localDataCost, 9, 4);
 	//cv::GaussianBlur(localDataCost, localDataCost, cv::Size(12, 12), 5, 5, cv::BORDER_REPLICATE);
 	cfPtr->FastCLMF0FloatFilterPointer(guideMaps[spInd], localDataCost, localDataCost);
@@ -245,12 +257,17 @@ int stereo::SPBPStereo::modifyCrossMapArmlengthToFitSubImage(const cv::Mat_<cv::
 int stereo::SPBPStereo::randomDisparityMap() {
 	dataCost_k.create(width * height, param.numOfK);
 	label_k.create(width * height, param.numOfK);
+	// generate hamming dist
+	hammingDist.resize(256);
+	for (size_t i = 0; i < 256; i++) {
+		uchar val = static_cast<uchar>(i);
+		hammingDist[i] = hdist<uchar>(i, 0);
+	}
 	// randomize 
 	for (size_t i = 0; i < leftSpGraphPtr->num; i++) { // i is super pixel index
 		int k = 0;
 		int repInd = leftSpGraphPtr->nodes[i].repInd;
 		std::vector<float> labelVecs;
-
 		// init guide filter
 		int crossColorTau = 25;
 		int crossArmLength = 9;
@@ -316,7 +333,6 @@ int stereo::SPBPStereo::randomDisparityMap() {
             }
         }	
 	}
-
 	// init message for belief propagation
 	message.create(width * height, 4);
 	message.setTo(cv::Scalar(0, 0, 0));
@@ -383,14 +399,12 @@ int stereo::SPBPStereo::beliefPropagation() {
 		vec_belief(buffersize),
 		vec_d_cost(buffersize);
 	cv::Mat_<float> DataCost_nei;
-
 	// diplay disparity map
 	this->estimateDisparity();
 	cv::Mat display = this->visualPtr->visualize(disparityMap);
 	cv::imshow("display", display);
 	cv::imwrite("visual_init.png", display);
 	cv::waitKey(20);
-
 	// start belief propagation
 	int spBegin, spEnd, spStep;
 	for (size_t iter = 0; iter < param.iterNum; iter++) {
@@ -453,14 +467,12 @@ int stereo::SPBPStereo::beliefPropagation() {
 					}
 				}
 			}
-
 			// calculate data cost
 			const int vec_size = vec_label_nei.size();
 			std::vector<cv::Mat_<float>> dataCost_nei(vec_size);
 			for (size_t neiInd = 0; neiInd < vec_size; neiInd++) {
 				dataCost_nei[neiInd] = getLocalDataCostPerLabel(spInd, vec_label_nei[neiInd]);
 			}
-
 			// init belief propagation
 			cv::Vec4i curRange_s = leftSpGraphPtr->nodes[spInd].range;
 			// init super pixel range
@@ -584,7 +596,6 @@ int stereo::SPBPStereo::beliefPropagation() {
 						}
 						vec_belief.push_back(_mes_l + _mes_r + _mes_u + _mes_d + dcost);
 					}
-
 					// compute top k labels with most confident disparities
 					size_t vec_in_size = vec_belief.size();
 					for (int i = 0; i < NUM_TOP_K; i++) {

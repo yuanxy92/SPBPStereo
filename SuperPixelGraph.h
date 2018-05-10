@@ -48,12 +48,35 @@ namespace stereo {
 		std::vector<SPNode> nodes; // superpixel nodes in superpixel graph
 	};
 
+	struct NonLocalCandidate {
+		float sumWeight;
+		int spInd;
+		NonLocalCandidate(float sw, int sp) : sumWeight(sw), spInd(sp) {}
+		static bool larger(const NonLocalCandidate& ct1, const NonLocalCandidate& ct2) {
+			return (ct1.sumWeight > ct2.sumWeight);
+		}
+	};
+
 	class SuperPixelGraph {
 	private:
 		SuperPixelParam param;
 	public:
 
 	private:
+		/**
+		@brief tansfer vec3b to vec3f
+		@param cv::Vec3b input: input vec3b value
+		@return cv::Vec3f: return vec3f value
+		*/
+		cv::Vec3f vec3bToVec3f(cv::Vec3b input);
+
+		/**
+		@brief build non local graph to speed up belief propagation
+		@param cv::Mat img: input image
+		@param std::shared_ptr<SPGraph> spGraph: input/output superpixel graph
+		@return int
+		*/
+		int buildNonLocalGraph(cv::Mat img, std::shared_ptr<SPGraph> spGraph);
 
 	public:
 		SuperPixelGraph();

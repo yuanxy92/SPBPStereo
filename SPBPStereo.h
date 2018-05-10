@@ -34,11 +34,11 @@ namespace stereo {
 		float tau_s;
 		StereoParam() {
 			minDisparity = 0.0f;
-			maxDisparity = 50.0f;
+			maxDisparity = 25.0f;
 			numOfK = NUM_TOP_K;
 			alpha = 0.9f;
 			iterNum = 5;
-			tau_s = 0.2f;
+			tau_s = 0.0f;
 			lambda_smooth = 1.0f;
 		}
 	};
@@ -74,6 +74,7 @@ namespace stereo {
 		cv::Mat_<cv::Vec<float, NUM_TOP_K>> message;
 		cv::Mat_<cv::Vec4f> smoothWeight;
 		// guide map used for aggregate cost
+		std::vector<int> hammingDist;
 		std::shared_ptr<CFFilter> cfPtr;
 		std::vector<cv::Mat_<cv::Vec4b>> guideMaps;
 
@@ -94,6 +95,14 @@ namespace stereo {
 		@return int
 		*/
 		int calcLBPFeature(cv::Mat& src, cv::Mat& dst);
+
+		/**
+		@brief get hamming distance
+		@param uchar feature1: first uchar feature 
+		@param uchar feature2: first uchar feature
+		@return int
+		*/
+		int getHammingDist(uchar feature1, uchar feature2);
 
 		/**
 		@brief estimate disparity map from data cost 
